@@ -28,6 +28,13 @@ const User = db.define("user", {
     type: DataTypes.STRING,
     allowNull: true,
   },
+  pin: {
+    type: DataTypes.STRING,
+    allowNull: true,
+    validate: {
+      len: [4, 4],
+    },
+  },
 });
 
 // Instance method to check password

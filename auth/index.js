@@ -6,6 +6,19 @@ const router = express.Router();
 
 const JWT_SECRET = process.env.JWT_SECRET || "your-secret-key";
 
+// Debug logging middleware for auth routes
+router.use((req, res, next) => {
+  console.log(`\n🔐 Auth Request: ${req.method} ${req.originalUrl}`);
+  if (req.body && Object.keys(req.body).length > 0) {
+    // Don't log sensitive data like passwords, just keys
+    const safeBody = { ...req.body };
+    if (safeBody.password) safeBody.password = '***';
+    if (safeBody.pin) safeBody.pin = '****';
+    console.log('📦 Body:', JSON.stringify(safeBody, null, 2));
+  }
+  next();
+});
+
 const cookieSettings = {
   httpOnly: true,
   secure: process.env.NODE_ENV === "production",
@@ -29,6 +42,44 @@ const authenticateJWT = (req, res, next) => {
     next();
   });
 };
+
+// PIN authentication route
+router.post("/pin", async (req, res) => {
+  try {
+    const { pin } = req.body;
+
+    if (!pin) {
+      return res.status(400).send({ error: "PIN is required" });
+    }
+
+    // Find user by PIN
+    const user = await User.findOne({ where: { pin } });
+
+    if (!user) {
+      return res.status(401).send({ error: "Invalid PIN" });
+    }
+
+    // Generate JWT token
+    const token = jwt.sign(
+      {
+        id: user.id,
+        username: user.username,
+      },
+      JWT_SECRET,
+      { expiresIn: "24h" }
+    );
+
+    res.cookie("token", token, cookieSettings);
+
+    res.send({
+      message: "Login successful",
+      user: { id: user.id, username: user.username },
+    });
+  } catch (error) {
+    console.error("PIN authentication error:", error);
+    res.sendStatus(500);
+  }
+});
 
 // Auth0 authentication route
 router.post("/auth0", async (req, res) => {

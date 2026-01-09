@@ -1,21 +1,99 @@
 const db = require("./db");
-const { User } = require("./index");
+const { User, TodoList, Task } = require("./index");
 
 const seed = async () => {
   try {
     db.logging = false;
     await db.sync({ force: true }); // Drop and recreate tables
 
+    // Create users
     const users = await User.bulkCreate([
-      { username: "admin", passwordHash: User.hashPassword("admin123") },
-      { username: "user1", passwordHash: User.hashPassword("user111") },
-      { username: "user2", passwordHash: User.hashPassword("user222") },
+      { username: "Frank", pin: "1739" },
+      { username: "Ella", pin: "2525" },
     ]);
 
     console.log(`👤 Created ${users.length} users`);
 
-    // Create more seed data here once you've created your models
-    // Seed files are a great way to test your database schema!
+    // Create TodoLists
+    const todoLists = await TodoList.bulkCreate([
+      {
+        title: "Frank's Personal Tasks",
+        description: "My personal to-do items",
+        userId: users[0].id,
+        isShared: false,
+      },
+      {
+        title: "Ella's Personal Tasks",
+        description: "My personal to-do items",
+        userId: users[1].id,
+        isShared: false,
+      },
+      {
+        title: "Household Chores",
+        description: "Shared household tasks",
+        userId: users[0].id,
+        isShared: true,
+      },
+      {
+        title: "Grocery Shopping",
+        description: "Things we need to buy",
+        userId: users[1].id,
+        isShared: true,
+      },
+    ]);
+
+    console.log(`📋 Created ${todoLists.length} todo lists`);
+
+    // Create Tasks
+    const tasks = await Task.bulkCreate([
+      {
+        title: "Finish project report",
+        description: "Complete the quarterly report",
+        todolistId: todoLists[0].id,
+        userId: users[0].id,
+        priority: "high",
+        dueDate: new Date("2026-01-15"),
+      },
+      {
+        title: "Call dentist",
+        description: "Schedule annual checkup",
+        todolistId: todoLists[1].id,
+        userId: users[1].id,
+        priority: "medium",
+      },
+      {
+        title: "Clean kitchen",
+        description: "Deep clean counters and appliances",
+        todolistId: todoLists[2].id,
+        userId: users[0].id,
+        priority: "medium",
+      },
+      {
+        title: "Vacuum living room",
+        description: "Vacuum and dust furniture",
+        todolistId: todoLists[2].id,
+        userId: users[1].id,
+        priority: "low",
+        isCompleted: true,
+      },
+      {
+        title: "Buy milk",
+        description: "Get 2% milk",
+        todolistId: todoLists[3].id,
+        userId: users[1].id,
+        priority: "high",
+        dueDate: new Date("2026-01-09"),
+      },
+      {
+        title: "Get bread and eggs",
+        description: "Whole wheat bread and a dozen eggs",
+        todolistId: todoLists[3].id,
+        userId: users[0].id,
+        priority: "medium",
+      },
+    ]);
+
+    console.log(`✅ Created ${tasks.length} tasks`);
 
     console.log("🌱 Seeded the database");
   } catch (error) {
