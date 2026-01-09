@@ -6,6 +6,7 @@ const tasksRouter = require("./tasks");
 const spotifyRouter = require("./spotify");
 const postsRouter = require("./posts");
 const messagesRouter = require("./messages");
+const uploadRouter = require("./upload");
 
 // Debug logging middleware
 router.use((req, res, next) => {
@@ -22,5 +23,6 @@ router.use("/tasks", tasksRouter);
 router.use("/spotify", spotifyRouter);
 router.use("/posts", postsRouter);
 router.use("/messages", messagesRouter);
+router.use("/upload", uploadRouter);
 
 module.exports = router;
