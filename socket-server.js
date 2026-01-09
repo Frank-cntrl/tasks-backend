@@ -13,28 +13,46 @@ const initSocketServer = (server) => {
   try {
     io = new Server(server, {
       cors: {
-        origin: [
-          "http://localhost:3000",
-          "https://tasks-xi-wine.vercel.app",
-          FRONTEND_URL
-        ].filter(Boolean),
+        origin: function (origin, callback) {
+          const allowedOrigins = [
+            "http://localhost:3000",
+            "https://tasks-xi-wine.vercel.app",
+            FRONTEND_URL
+          ].filter(Boolean);
+          
+          // Allow requests with no origin (like mobile apps)
+          if (!origin) return callback(null, true);
+          
+          if (allowedOrigins.includes(origin)) {
+            callback(null, true);
+          } else {
+            console.log("Socket.io CORS blocked:", origin);
+            callback(new Error("Not allowed by CORS"));
+          }
+        },
         credentials: true,
+        methods: ["GET", "POST"],
       },
     });
 
     io.use((socket, next) => {
       const token = socket.handshake.auth.token;
+      console.log("Socket auth attempt, token present:", !!token);
+      
       if (!token) {
-        return next(new Error("Authentication error"));
+        console.log("Socket auth failed: No token");
+        return next(new Error("Authentication error: No token"));
       }
 
       try {
         const decoded = jwt.verify(token, JWT_SECRET);
         socket.userId = decoded.id;
         socket.username = decoded.username;
+        console.log("Socket auth success for user:", decoded.username);
         next();
       } catch (err) {
-        next(new Error("Authentication error"));
+        console.log("Socket auth failed: Invalid token", err.message);
+        next(new Error("Authentication error: Invalid token"));
       }
     });
 
@@ -50,20 +68,24 @@ const initSocketServer = (server) => {
       });
 
       socket.on("send_message", async (data) => {
+        console.log("Received send_message from", socket.username, ":", data);
         try {
           const { content, imageUrl, receiverId } = data;
 
           if (!content && !imageUrl) {
+            console.log("Message rejected: no content or image");
             socket.emit("error", { message: "Message content or image is required" });
             return;
           }
 
+          console.log("Creating message in database...");
           const message = await Message.create({
             content,
             imageUrl,
             senderId: socket.userId,
             receiverId,
           });
+          console.log("Message created with ID:", message.id);
 
           const fullMessage = await Message.findByPk(message.id, {
             include: [
@@ -72,11 +94,12 @@ const initSocketServer = (server) => {
             ],
           });
 
+          console.log("Broadcasting message to frella_chat room");
           io.to("frella_chat").emit("new_message", fullMessage);
 
         } catch (error) {
           console.error("Error sending message:", error);
-          socket.emit("error", { message: "Failed to send message" });
+          socket.emit("error", { message: "Failed to send message: " + error.message });
         }
       });
 
