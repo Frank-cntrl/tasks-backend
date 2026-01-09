@@ -4,10 +4,20 @@ const { authenticateJWT } = require("../auth");
 const cloudinary = require("cloudinary").v2;
 
 // Configure Cloudinary
+const cloudName = process.env.CLOUDINARY_CLOUD_NAME;
+const apiKey = process.env.CLOUDINARY_API_KEY;
+const apiSecret = process.env.CLOUDINARY_API_SECRET;
+
+console.log("Cloudinary config:", {
+  cloud_name: cloudName ? "set" : "MISSING",
+  api_key: apiKey ? "set" : "MISSING",
+  api_secret: apiSecret ? "set" : "MISSING",
+});
+
 cloudinary.config({
-  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
-  api_key: process.env.CLOUDINARY_API_KEY,
-  api_secret: process.env.CLOUDINARY_API_SECRET,
+  cloud_name: cloudName,
+  api_key: apiKey,
+  api_secret: apiSecret,
 });
 
 // Folder structure for different features
@@ -46,8 +56,12 @@ router.post("/image", authenticateJWT, async (req, res) => {
       height: result.height,
     });
   } catch (error) {
-    console.error("Upload error:", error);
-    res.status(500).json({ error: "Failed to upload image" });
+    console.error("Upload error:", error.message);
+    console.error("Full error:", error);
+    res.status(500).json({ 
+      error: "Failed to upload image", 
+      details: error.message 
+    });
   }
 });
 
