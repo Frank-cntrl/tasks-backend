@@ -28,16 +28,28 @@ const cookieSettings = {
 
 // Middleware to authenticate JWT tokens
 const authenticateJWT = (req, res, next) => {
-  const token = req.cookies.token;
+  // Try cookie first (for web browsers)
+  let token = req.cookies.token;
+
+  // Fallback to Authorization header (for mobile or when cookies don't work)
+  if (!token) {
+    const authHeader = req.headers.authorization;
+    if (authHeader && authHeader.startsWith('Bearer ')) {
+      token = authHeader.substring(7);
+    }
+  }
 
   if (!token) {
+    console.log('❌ No token found in cookies or Authorization header');
     return res.status(401).send({ error: "Access token required" });
   }
 
   jwt.verify(token, JWT_SECRET, (err, user) => {
     if (err) {
+      console.log('❌ Token verification failed:', err.message);
       return res.status(403).send({ error: "Invalid or expired token" });
     }
+    console.log('✅ Token verified for user:', user.username);
     req.user = user;
     next();
   });
@@ -74,6 +86,7 @@ router.post("/pin", async (req, res) => {
     res.send({
       message: "Login successful",
       user: { id: user.id, username: user.username },
+      token, // Also send token in response for mobile compatibility
     });
   } catch (error) {
     console.error("PIN authentication error:", error);
