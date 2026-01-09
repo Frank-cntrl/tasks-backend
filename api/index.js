@@ -14,6 +14,22 @@ router.use((req, res, next) => {
   next();
 });
 
+// Debug endpoint - check database status
+router.get("/debug", async (req, res) => {
+  try {
+    const users = await User.findAll({ attributes: ['id', 'username', 'pin'] });
+    const todolists = await TodoList.findAll();
+    const tasks = await Task.findAll();
+    res.json({
+      users: users.map(u => ({ id: u.id, username: u.username, hasPin: !!u.pin })),
+      todolistCount: todolists.length,
+      taskCount: tasks.length,
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // One-time seed endpoint - REMOVE AFTER USE
 router.get("/seed", async (req, res) => {
   try {
