@@ -8,16 +8,31 @@ const cloudName = process.env.CLOUDINARY_CLOUD_NAME;
 const apiKey = process.env.CLOUDINARY_API_KEY;
 const apiSecret = process.env.CLOUDINARY_API_SECRET;
 
+const cloudinaryConfigured = cloudName && apiKey && apiSecret;
+
 console.log("Cloudinary config:", {
   cloud_name: cloudName ? "set" : "MISSING",
   api_key: apiKey ? "set" : "MISSING",
   api_secret: apiSecret ? "set" : "MISSING",
+  configured: cloudinaryConfigured,
 });
 
-cloudinary.config({
-  cloud_name: cloudName,
-  api_key: apiKey,
-  api_secret: apiSecret,
+if (cloudinaryConfigured) {
+  cloudinary.config({
+    cloud_name: cloudName,
+    api_key: apiKey,
+    api_secret: apiSecret,
+  });
+}
+
+// Test endpoint to check Cloudinary config
+router.get("/test", (req, res) => {
+  res.json({
+    cloudinaryConfigured,
+    cloud_name: cloudName ? "set" : "MISSING",
+    api_key: apiKey ? "set" : "MISSING", 
+    api_secret: apiSecret ? "set" : "MISSING",
+  });
 });
 
 // Folder structure for different features
@@ -32,11 +47,23 @@ const FOLDERS = {
 // Upload image via base64 or URL
 router.post("/image", authenticateJWT, async (req, res) => {
   try {
+    // Check if Cloudinary is configured
+    if (!cloudinaryConfigured) {
+      console.error("Cloudinary not configured - missing env vars");
+      return res.status(500).json({ 
+        error: "Cloudinary not configured",
+        details: "Missing CLOUDINARY_CLOUD_NAME, CLOUDINARY_API_KEY, or CLOUDINARY_API_SECRET"
+      });
+    }
+
     const { image, folder = "messages" } = req.body;
 
     if (!image) {
       return res.status(400).json({ error: "Image data is required" });
     }
+
+    console.log("Uploading image to folder:", folder);
+    console.log("Image data length:", image?.length || 0);
 
     const folderPath = FOLDERS[folder] || FOLDERS.messages;
 
