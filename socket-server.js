@@ -37,10 +37,13 @@ const initSocketServer = (server) => {
 
     io.use((socket, next) => {
       const token = socket.handshake.auth.token;
-      console.log("Socket auth attempt, token present:", !!token);
+      console.log("\n🔐 Socket auth attempt");
+      console.log("   - Token present:", !!token);
+      console.log("   - Transport:", socket.handshake.query.transport || 'unknown');
+      console.log("   - Origin:", socket.handshake.headers.origin);
       
       if (!token) {
-        console.log("Socket auth failed: No token");
+        console.log("   ❌ Auth failed: No token");
         return next(new Error("Authentication error: No token"));
       }
 
@@ -48,10 +51,10 @@ const initSocketServer = (server) => {
         const decoded = jwt.verify(token, JWT_SECRET);
         socket.userId = decoded.id;
         socket.username = decoded.username;
-        console.log("Socket auth success for user:", decoded.username);
+        console.log("   ✅ Auth success for user:", decoded.username);
         next();
       } catch (err) {
-        console.log("Socket auth failed: Invalid token", err.message);
+        console.log("   ❌ Auth failed: Invalid token -", err.message);
         next(new Error("Authentication error: Invalid token"));
       }
     });
