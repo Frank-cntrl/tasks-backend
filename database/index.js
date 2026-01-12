@@ -7,6 +7,7 @@ const Post = require("./post");
 const Like = require("./like");
 const Comment = require("./comment");
 const Message = require("./message");
+const Board = require("./board");
 
 // ========== TodoList Associations ==========
 // A User has many TodoLists
@@ -68,4 +69,5 @@ module.exports = {
   Like,
   Comment,
   Message,
+  Board,
 };

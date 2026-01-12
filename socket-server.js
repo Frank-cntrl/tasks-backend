@@ -118,9 +118,115 @@ const initSocketServer = (server) => {
         }
       });
 
+      // ========== Board Collaboration Events ==========
+      socket.on("join_board", (data) => {
+        const { boardId } = data;
+        if (!boardId) {
+          socket.emit("error", { message: "Board ID is required" });
+          return;
+        }
+        
+        socket.join(`board_${boardId}`);
+        socket.currentBoardId = boardId;
+        
+        // Notify others in the room that this user joined
+        socket.to(`board_${boardId}`).emit("board_user_joined", {
+          userId: socket.userId,
+          username: socket.username,
+        });
+        
+        // Send current users in room back to joiner
+        const roomSockets = io.sockets.adapter.rooms.get(`board_${boardId}`);
+        const usersInRoom = [];
+        if (roomSockets) {
+          roomSockets.forEach((socketId) => {
+            const s = io.sockets.sockets.get(socketId);
+            if (s && s.userId !== socket.userId) {
+              usersInRoom.push({
+                userId: s.userId,
+                username: s.username,
+              });
+            }
+          });
+        }
+        
+        socket.emit("board_users", { users: usersInRoom });
+      });
+
+      socket.on("leave_board", (data) => {
+        const { boardId } = data;
+        if (boardId) {
+          socket.leave(`board_${boardId}`);
+          socket.to(`board_${boardId}`).emit("board_user_left", {
+            userId: socket.userId,
+          });
+          socket.currentBoardId = null;
+        }
+      });
+
+      // Broadcast drawing changes to room (throttled on client)
+      socket.on("board_changes", (data) => {
+        const { boardId, changes } = data;
+        if (!boardId || !changes) {
+          return;
+        }
+        
+        // Broadcast to everyone in the room except sender
+        socket.to(`board_${boardId}`).emit("board_changes", {
+          userId: socket.userId,
+          username: socket.username,
+          changes,
+        });
+      });
+
+      // Presence: cursor position
+      socket.on("board_cursor", (data) => {
+        const { boardId, x, y } = data;
+        if (!boardId) return;
+        
+        socket.to(`board_${boardId}`).emit("board_cursor", {
+          userId: socket.userId,
+          username: socket.username,
+          x,
+          y,
+        });
+      });
+
+      // Request snapshot from other connected users (fallback)
+      socket.on("request_board_snapshot", (data) => {
+        const { boardId } = data;
+        if (!boardId) return;
+        
+        socket.to(`board_${boardId}`).emit("snapshot_requested", {
+          requesterId: socket.userId,
+        });
+      });
+
+      // Provide snapshot to requester
+      socket.on("provide_board_snapshot", (data) => {
+        const { boardId, snapshot, requesterId } = data;
+        if (!boardId || !snapshot || !requesterId) return;
+        
+        // Send snapshot directly to requester
+        const requesterSocketId = connectedUsers.get(requesterId);
+        if (requesterSocketId) {
+          io.to(requesterSocketId).emit("board_snapshot_received", {
+            snapshot,
+            providerId: socket.userId,
+          });
+        }
+      });
+
       socket.on("disconnect", () => {
         connectedUsers.delete(socket.userId);
         io.emit("user_offline", { userId: socket.userId });
+        
+        // Notify board room if user was in one
+        if (socket.currentBoardId) {
+          socket.to(`board_${socket.currentBoardId}`).emit("board_user_left", {
+            userId: socket.userId,
+          });
+        }
       });
     });
 
