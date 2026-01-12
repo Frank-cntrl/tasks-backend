@@ -40,16 +40,13 @@ const authenticateJWT = (req, res, next) => {
   }
 
   if (!token) {
-    console.log('❌ No token found in cookies or Authorization header');
     return res.status(401).send({ error: "Access token required" });
   }
 
   jwt.verify(token, JWT_SECRET, (err, user) => {
     if (err) {
-      console.log('❌ Token verification failed:', err.message);
       return res.status(403).send({ error: "Invalid or expired token" });
     }
-    console.log('✅ Token verified for user:', user.username);
     req.user = user;
     next();
   });
@@ -299,7 +296,6 @@ router.get("/socket-token", authenticateJWT, (req, res) => {
     { expiresIn: "1h" }
   );
   
-  console.log('✅ Generated socket token for user:', req.user.username);
   res.send({ token: socketToken });
 });
 

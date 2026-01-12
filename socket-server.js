@@ -26,7 +26,6 @@ const initSocketServer = (server) => {
           if (allowedOrigins.includes(origin)) {
             callback(null, true);
           } else {
-            console.log("Socket.io CORS blocked:", origin);
             callback(new Error("Not allowed by CORS"));
           }
         },
@@ -37,13 +36,8 @@ const initSocketServer = (server) => {
 
     io.use((socket, next) => {
       const token = socket.handshake.auth.token;
-      console.log("\n🔐 Socket auth attempt");
-      console.log("   - Token present:", !!token);
-      console.log("   - Transport:", socket.handshake.query.transport || 'unknown');
-      console.log("   - Origin:", socket.handshake.headers.origin);
       
       if (!token) {
-        console.log("   ❌ Auth failed: No token");
         return next(new Error("Authentication error: No token"));
       }
 
@@ -51,44 +45,35 @@ const initSocketServer = (server) => {
         const decoded = jwt.verify(token, JWT_SECRET);
         socket.userId = decoded.id;
         socket.username = decoded.username;
-        console.log("   ✅ Auth success for user:", decoded.username);
         next();
       } catch (err) {
-        console.log("   ❌ Auth failed: Invalid token -", err.message);
         next(new Error("Authentication error: Invalid token"));
       }
     });
 
     io.on("connection", (socket) => {
-      console.log("User " + socket.username + " connected to sockets");
-      
       connectedUsers.set(socket.userId, socket.id);
       io.emit("user_online", { userId: socket.userId, username: socket.username });
 
       socket.on("join_chat", () => {
         socket.join("frella_chat");
-        console.log(socket.username + " joined frella_chat room");
       });
 
       socket.on("send_message", async (data) => {
-        console.log("Received send_message from", socket.username, ":", data);
         try {
           const { content, imageUrl, receiverId } = data;
 
           if (!content && !imageUrl) {
-            console.log("Message rejected: no content or image");
             socket.emit("error", { message: "Message content or image is required" });
             return;
           }
 
-          console.log("Creating message in database...");
           const message = await Message.create({
             content,
             imageUrl,
             senderId: socket.userId,
             receiverId,
           });
-          console.log("Message created with ID:", message.id);
 
           const fullMessage = await Message.findByPk(message.id, {
             include: [
@@ -97,12 +82,11 @@ const initSocketServer = (server) => {
             ],
           });
 
-          console.log("Broadcasting message to frella_chat room");
           io.to("frella_chat").emit("new_message", fullMessage);
 
         } catch (error) {
           console.error("Error sending message:", error);
-          socket.emit("error", { message: "Failed to send message: " + error.message });
+          socket.emit("error", { message: "Failed to send message" });
         }
       });
 
@@ -135,15 +119,13 @@ const initSocketServer = (server) => {
       });
 
       socket.on("disconnect", () => {
-        console.log("User " + socket.username + " disconnected from sockets");
         connectedUsers.delete(socket.userId);
         io.emit("user_offline", { userId: socket.userId });
       });
     });
 
   } catch (error) {
-    console.error("Error initializing socket server:");
-    console.error(error);
+    console.error("Error initializing socket server:", error);
   }
 };
 
