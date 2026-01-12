@@ -287,20 +287,20 @@ router.get("/me", (req, res) => {
 });
 
 // Get socket token (for WebSocket authentication)
-router.get("/socket-token", (req, res) => {
-  const token = req.cookies.token;
-
-  if (!token) {
-    return res.status(401).send({ error: "Not authenticated" });
-  }
-
-  jwt.verify(token, JWT_SECRET, (err, user) => {
-    if (err) {
-      return res.status(403).send({ error: "Invalid or expired token" });
-    }
-    // Return the token so frontend can use it for socket auth
-    res.send({ token });
-  });
+router.get("/socket-token", authenticateJWT, (req, res) => {
+  // authenticateJWT middleware already verified the token (from cookie OR Authorization header)
+  // Now generate a new token for socket authentication
+  const socketToken = jwt.sign(
+    {
+      id: req.user.id,
+      username: req.user.username,
+    },
+    JWT_SECRET,
+    { expiresIn: "1h" }
+  );
+  
+  console.log('✅ Generated socket token for user:', req.user.username);
+  res.send({ token: socketToken });
 });
 
 module.exports = { router, authenticateJWT };
