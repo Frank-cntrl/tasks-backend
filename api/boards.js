@@ -4,6 +4,10 @@ const { Board, User } = require("../database");
 const { authenticateJWT } = require("../auth");
 const { v4: uuidv4 } = require("uuid");
 
+// Debug logging
+const DEBUG = true;
+const log = (...args) => DEBUG && console.log("[Boards API]", ...args);
+
 // Apply authentication to all board routes
 router.use(authenticateJWT);
 
@@ -122,12 +126,18 @@ router.put("/:boardId", async (req, res) => {
 router.get("/:boardId/snapshot", async (req, res) => {
   try {
     const { boardId } = req.params;
+    log("📥 GET snapshot for boardId:", boardId, "by user:", req.user.id);
 
     const board = await Board.findOne({ where: { boardId } });
 
     if (!board) {
+      log("📥 ⚠️ Board not found:", boardId);
       return res.status(404).json({ error: "Board not found" });
     }
+
+    const hasSnapshot = !!board.snapshot;
+    const snapshotStoreSize = board.snapshot?.store ? Object.keys(board.snapshot.store).length : 0;
+    log("📥 Snapshot found:", { hasSnapshot, snapshotStoreSize, updatedAt: board.updatedAt });
 
     res.json({
       boardId: board.boardId,
@@ -151,19 +161,31 @@ router.post("/:boardId/snapshot", async (req, res) => {
     const { boardId } = req.params;
     const { snapshot } = req.body;
 
+    log("💾 POST snapshot for boardId:", boardId, "by user:", req.user.id);
+
     if (!snapshot) {
+      log("💾 ⚠️ No snapshot in request body");
       return res.status(400).json({ error: "Snapshot is required" });
     }
+
+    const snapshotStoreSize = snapshot.store ? Object.keys(snapshot.store).length : 0;
+    log("💾 Snapshot received:", { 
+      keys: Object.keys(snapshot),
+      storeSize: snapshotStoreSize,
+    });
 
     const board = await Board.findOne({ where: { boardId } });
 
     if (!board) {
+      log("💾 ⚠️ Board not found:", boardId);
       return res.status(404).json({ error: "Board not found" });
     }
 
     board.snapshot = snapshot;
     board.lastModifiedBy = req.user.id;
     await board.save();
+
+    log("💾 ✅ Snapshot saved successfully at:", board.updatedAt);
 
     res.json({
       message: "Board snapshot saved",

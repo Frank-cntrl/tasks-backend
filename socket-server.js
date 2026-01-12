@@ -7,10 +7,16 @@ let io;
 const FRONTEND_URL = process.env.FRONTEND_URL || "http://localhost:3000";
 const JWT_SECRET = process.env.JWT_SECRET || "your-secret-key";
 
+// Debug logging
+const DEBUG = true;
+const log = (...args) => DEBUG && console.log("[Socket]", ...args);
+
 const connectedUsers = new Map();
 
 const initSocketServer = (server) => {
   try {
+    log("Initializing socket server...");
+    
     io = new Server(server, {
       cors: {
         origin: function (origin, callback) {
@@ -52,6 +58,7 @@ const initSocketServer = (server) => {
     });
 
     io.on("connection", (socket) => {
+      log("✅ User connected:", socket.username, "userId:", socket.userId, "socketId:", socket.id);
       connectedUsers.set(socket.userId, socket.id);
       io.emit("user_online", { userId: socket.userId, username: socket.username });
 
@@ -121,22 +128,30 @@ const initSocketServer = (server) => {
       // ========== Board Collaboration Events ==========
       socket.on("join_board", (data) => {
         const { boardId } = data;
+        log("📋 join_board request from", socket.username, "boardId:", boardId);
+        
         if (!boardId) {
           socket.emit("error", { message: "Board ID is required" });
           return;
         }
         
-        socket.join(`board_${boardId}`);
+        const roomName = `board_${boardId}`;
+        socket.join(roomName);
         socket.currentBoardId = boardId;
         
+        // Log room info
+        const roomSockets = io.sockets.adapter.rooms.get(roomName);
+        log("📋 Room", roomName, "now has", roomSockets ? roomSockets.size : 0, "sockets");
+        
         // Notify others in the room that this user joined
-        socket.to(`board_${boardId}`).emit("board_user_joined", {
+        socket.to(roomName).emit("board_user_joined", {
           userId: socket.userId,
           username: socket.username,
+          socketId: socket.id,
         });
+        log("📋 Notified room of new user:", socket.username);
         
         // Send current users in room back to joiner
-        const roomSockets = io.sockets.adapter.rooms.get(`board_${boardId}`);
         const usersInRoom = [];
         if (roomSockets) {
           roomSockets.forEach((socketId) => {
@@ -150,15 +165,18 @@ const initSocketServer = (server) => {
           });
         }
         
+        log("📋 Sending existing users to", socket.username, ":", usersInRoom);
         socket.emit("board_users", { users: usersInRoom });
       });
 
       socket.on("leave_board", (data) => {
         const { boardId } = data;
+        log("📋 leave_board from", socket.username, "boardId:", boardId);
         if (boardId) {
           socket.leave(`board_${boardId}`);
           socket.to(`board_${boardId}`).emit("board_user_left", {
             userId: socket.userId,
+            socketId: socket.id,
           });
           socket.currentBoardId = null;
         }
@@ -167,16 +185,50 @@ const initSocketServer = (server) => {
       // Broadcast drawing changes to room (throttled on client)
       socket.on("board_changes", (data) => {
         const { boardId, changes } = data;
+        
+        log("🎨 board_changes received from", socket.username, "userId:", socket.userId);
+        log("🎨 boardId:", boardId);
+        log("🎨 changes count:", changes ? changes.length : 0);
+        
         if (!boardId || !changes) {
+          log("🎨 ⚠️ Missing boardId or changes, ignoring");
           return;
         }
         
+        // Log change details
+        if (changes.length > 0) {
+          changes.forEach((change, i) => {
+            log(`🎨 Change ${i}:`, {
+              added: change.added ? Object.keys(change.added).length : 0,
+              updated: change.updated ? Object.keys(change.updated).length : 0,
+              removed: change.removed ? Object.keys(change.removed).length : 0,
+            });
+          });
+        }
+        
+        // Check room membership
+        const roomName = `board_${boardId}`;
+        const roomSockets = io.sockets.adapter.rooms.get(roomName);
+        log("🎨 Room", roomName, "has", roomSockets ? roomSockets.size : 0, "sockets");
+        
+        if (roomSockets) {
+          roomSockets.forEach((socketId) => {
+            const s = io.sockets.sockets.get(socketId);
+            if (s) {
+              log("🎨 Socket in room:", s.username, "userId:", s.userId, "socketId:", socketId);
+            }
+          });
+        }
+        
         // Broadcast to everyone in the room except sender
-        socket.to(`board_${boardId}`).emit("board_changes", {
+        log("🎨 Broadcasting to room", roomName, "(excluding sender)");
+        socket.to(roomName).emit("board_changes", {
           userId: socket.userId,
           username: socket.username,
+          socketId: socket.id, // Include socket ID for echo prevention
           changes,
         });
+        log("🎨 ✅ Broadcast complete");
       });
 
       // Presence: cursor position
@@ -187,6 +239,7 @@ const initSocketServer = (server) => {
         socket.to(`board_${boardId}`).emit("board_cursor", {
           userId: socket.userId,
           username: socket.username,
+          socketId: socket.id,
           x,
           y,
         });
@@ -217,7 +270,8 @@ const initSocketServer = (server) => {
         }
       });
 
-      socket.on("disconnect", () => {
+      socket.on("disconnect", (reason) => {
+        log("❌ User disconnected:", socket.username, "socketId:", socket.id, "reason:", reason);
         connectedUsers.delete(socket.userId);
         io.emit("user_offline", { userId: socket.userId });
         
@@ -225,10 +279,13 @@ const initSocketServer = (server) => {
         if (socket.currentBoardId) {
           socket.to(`board_${socket.currentBoardId}`).emit("board_user_left", {
             userId: socket.userId,
+            socketId: socket.id,
           });
         }
       });
     });
+    
+    log("✅ Socket server initialized");
 
   } catch (error) {
     console.error("Error initializing socket server:", error);
