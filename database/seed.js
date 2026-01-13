@@ -1,5 +1,5 @@
 const db = require("./db");
-const { User, TodoList, Task } = require("./index");
+const { User, TodoList, Task, Board } = require("./index");
 
 const seed = async () => {
   try {
@@ -94,6 +94,24 @@ const seed = async () => {
     ]);
 
     console.log(`✅ Created ${tasks.length} tasks`);
+
+    // Create sample boards
+    const boards = await Board.bulkCreate([
+      {
+        boardId: "sample-board-1",
+        name: "Frank's Drawing Board",
+        createdBy: users[0].id,
+        lastModifiedBy: users[0].id,
+      },
+      {
+        boardId: "sample-board-2", 
+        name: "Shared Brainstorm",
+        createdBy: users[1].id,
+        lastModifiedBy: users[1].id,
+      },
+    ]);
+
+    console.log(`🎨 Created ${boards.length} boards`);
 
     console.log("🌱 Seeded the database");
   } catch (error) {

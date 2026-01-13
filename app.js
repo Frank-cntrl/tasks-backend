@@ -56,8 +56,15 @@ app.use((err, req, res, next) => {
 
 const runApp = async () => {
   try {
-    await db.sync();
+    // Import all models to ensure they're registered before sync
+    const { User, TodoList, Task, Board, SpotifyToken, Post, Like, Comment, Message } = require("./database");
+    
+    await db.sync({ alter: true }); // Use alter to update tables without dropping data
     console.log("✅ Connected to the database");
+    
+    // Log all defined models to verify Board is included
+    console.log("📋 Defined models:", Object.keys(db.models));
+    
     const server = app.listen(PORT, () => {
       console.log(`🚀 Server is running on port ${PORT}`);
     });

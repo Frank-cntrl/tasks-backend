@@ -35,13 +35,17 @@ router.get("/", async (req, res) => {
  */
 router.post("/", async (req, res) => {
   try {
+    log("Creating new board with body:", req.body);
     const { name } = req.body;
 
     if (!name || !name.trim()) {
+      log("❌ Board name validation failed");
       return res.status(400).json({ error: "Board name is required" });
     }
 
     const boardId = uuidv4();
+    log("Generated boardId:", boardId, "for user:", req.user?.id);
+    
     const board = await Board.create({
       boardId,
       name: name.trim(),
@@ -50,6 +54,7 @@ router.post("/", async (req, res) => {
       lastModifiedBy: req.user.id,
     });
 
+    log("✅ Board created successfully:", board.boardId);
     res.status(201).json({
       id: board.id,
       boardId: board.boardId,
@@ -58,8 +63,9 @@ router.post("/", async (req, res) => {
       createdAt: board.createdAt,
     });
   } catch (error) {
-    console.error("Error creating board:", error);
-    res.status(500).json({ error: "Failed to create board" });
+    log("❌ Error creating board:", error.message);
+    console.error("Full error details:", error);
+    res.status(500).json({ error: "Failed to create board", details: error.message });
   }
 });
 
