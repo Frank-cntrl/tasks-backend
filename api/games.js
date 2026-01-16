@@ -212,6 +212,14 @@ router.post("/:gameType/new", authenticateJWT, async (req, res) => {
       return res.status(400).send({ error: "No other player found" });
     }
 
+    // Delete any existing active games of this type first
+    await Game.destroy({
+      where: {
+        gameType,
+        isActive: true,
+      },
+    });
+
     // Determine who goes first (loser of last game, or if draw/new, alternate)
     let firstPlayer = req.user.id;
     if (lastWinner && lastWinner !== 0) {
