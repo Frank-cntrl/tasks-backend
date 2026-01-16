@@ -18,6 +18,8 @@ router.get("/", authenticateJWT, async (req, res) => {
         {
           model: Task,
           as: "tasks",
+          separate: true, // Fetch tasks in separate query for consistent ordering
+          order: [["createdAt", "ASC"]], // Order tasks by creation date
         },
       ],
       order: [["createdAt", "DESC"]],
