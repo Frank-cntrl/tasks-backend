@@ -8,6 +8,7 @@ const postsRouter = require("./posts");
 const messagesRouter = require("./messages");
 const uploadRouter = require("./upload");
 const boardsRouter = require("./boards");
+const gamesRouter = require("./games");
 
 // Debug logging middleware
 router.use((req, res, next) => {
@@ -26,5 +27,6 @@ router.use("/posts", postsRouter);
 router.use("/messages", messagesRouter);
 router.use("/upload", uploadRouter);
 router.use("/boards", boardsRouter);
+router.use("/games", gamesRouter);
 
 module.exports = router;

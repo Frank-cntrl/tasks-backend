@@ -8,6 +8,7 @@ const Like = require("./like");
 const Comment = require("./comment");
 const Message = require("./message");
 const Board = require("./board");
+const Game = require("./game");
 
 // ========== TodoList Associations ==========
 // A User has many TodoLists
@@ -15,8 +16,8 @@ User.hasMany(TodoList, { foreignKey: "userId", onDelete: "CASCADE" });
 TodoList.belongsTo(User, { foreignKey: "userId" });
 
 // A TodoList has many Tasks
-TodoList.hasMany(Task, { foreignKey: "todolistId", onDelete: "CASCADE" });
-Task.belongsTo(TodoList, { foreignKey: "todolistId" });
+TodoList.hasMany(Task, { as: "tasks", foreignKey: "todolistId", onDelete: "CASCADE" });
+Task.belongsTo(TodoList, { as: "todolist", foreignKey: "todolistId" });
 
 // A User has many Tasks (through TodoLists)
 User.hasMany(Task, { foreignKey: "userId", onDelete: "CASCADE" });
@@ -59,6 +60,13 @@ Message.belongsTo(User, { as: "sender", foreignKey: "senderId" });
 User.hasMany(Message, { as: "receivedMessages", foreignKey: "receiverId", onDelete: "CASCADE" });
 Message.belongsTo(User, { as: "receiver", foreignKey: "receiverId" });
 
+// ========== Game Associations ==========
+// A Game has two players
+Game.belongsTo(User, { as: "player1", foreignKey: "player1Id" });
+Game.belongsTo(User, { as: "player2", foreignKey: "player2Id" });
+User.hasMany(Game, { as: "gamesAsPlayer1", foreignKey: "player1Id" });
+User.hasMany(Game, { as: "gamesAsPlayer2", foreignKey: "player2Id" });
+
 module.exports = {
   db,
   User,
@@ -70,4 +78,5 @@ module.exports = {
   Comment,
   Message,
   Board,
+  Game,
 };
