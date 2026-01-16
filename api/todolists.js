@@ -59,7 +59,7 @@ router.get("/:id", authenticateJWT, async (req, res) => {
 // Create a new TodoList
 router.post("/", authenticateJWT, async (req, res) => {
   try {
-    const { title, description } = req.body;
+    const { title, description, isShared } = req.body;
 
     if (!title) {
       return res.status(400).send({ error: "Title is required" });
@@ -68,6 +68,7 @@ router.post("/", authenticateJWT, async (req, res) => {
     const todolist = await TodoList.create({
       title,
       description,
+      isShared: isShared || false,
       userId: req.user.id,
     });
 

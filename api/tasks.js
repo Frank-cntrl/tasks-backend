@@ -65,11 +65,16 @@ router.post("/", authenticateJWT, async (req, res) => {
       return res.status(400).send({ error: "TodoList ID is required" });
     }
 
-    // Verify that the todolist belongs to the user
+    const { Op } = require("sequelize");
+    
+    // Verify that the todolist belongs to the user OR is shared
     const todolist = await TodoList.findOne({
       where: {
         id: todolistId,
-        userId: req.user.id,
+        [Op.or]: [
+          { userId: req.user.id }, // User's own list
+          { isShared: true }, // Shared list
+        ],
       },
     });
 
@@ -99,27 +104,43 @@ router.put("/:id", authenticateJWT, async (req, res) => {
     const { title, description, isCompleted, dueDate, priority, todolistId } =
       req.body;
 
+    const { Op } = require("sequelize");
+    
+    // Find the task and include its todolist to check if it's shared
     const task = await Task.findOne({
       where: {
         id: req.params.id,
-        userId: req.user.id,
       },
+      include: [{
+        model: TodoList,
+        as: "todolist",
+        attributes: ["id", "userId", "isShared"],
+      }],
     });
 
     if (!task) {
       return res.status(404).send({ error: "Task not found" });
     }
 
-    // If todolistId is being updated, verify the new todolist belongs to user
+    // Check if user can modify this task (owns it or it's in a shared list)
+    const canModify = task.userId === req.user.id || task.todolist?.isShared;
+    if (!canModify) {
+      return res.status(403).send({ error: "Not authorized to modify this task" });
+    }
+
+    // If todolistId is being updated, verify the new todolist belongs to user or is shared
     if (todolistId !== undefined && todolistId !== task.todolistId) {
-      const todolist = await TodoList.findOne({
+      const newTodolist = await TodoList.findOne({
         where: {
           id: todolistId,
-          userId: req.user.id,
+          [Op.or]: [
+            { userId: req.user.id },
+            { isShared: true },
+          ],
         },
       });
 
-      if (!todolist) {
+      if (!newTodolist) {
         return res.status(404).send({ error: "TodoList not found" });
       }
     }
@@ -144,15 +165,26 @@ router.put("/:id", authenticateJWT, async (req, res) => {
 // Delete a Task
 router.delete("/:id", authenticateJWT, async (req, res) => {
   try {
+    // Find the task and include its todolist to check if it's shared
     const task = await Task.findOne({
       where: {
         id: req.params.id,
-        userId: req.user.id,
       },
+      include: [{
+        model: TodoList,
+        as: "todolist",
+        attributes: ["id", "userId", "isShared"],
+      }],
     });
 
     if (!task) {
       return res.status(404).send({ error: "Task not found" });
+    }
+
+    // Check if user can delete this task (owns it or it's in a shared list)
+    const canDelete = task.userId === req.user.id || task.todolist?.isShared;
+    if (!canDelete) {
+      return res.status(403).send({ error: "Not authorized to delete this task" });
     }
 
     await task.destroy();
