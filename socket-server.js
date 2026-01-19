@@ -13,6 +13,46 @@ const log = (...args) => DEBUG && console.log("[Socket]", ...args);
 
 const connectedUsers = new Map();
 
+// Curated list of drawable nouns for Guess My Thing game
+const DRAWABLE_NOUNS = [
+  // Animals
+  'cat', 'dog', 'elephant', 'giraffe', 'lion', 'tiger', 'bear', 'rabbit', 'mouse', 'fish',
+  'bird', 'snake', 'frog', 'turtle', 'monkey', 'penguin', 'dolphin', 'whale', 'shark', 'octopus',
+  'butterfly', 'bee', 'spider', 'ant', 'horse', 'cow', 'pig', 'sheep', 'chicken', 'duck',
+  // Objects
+  'house', 'car', 'tree', 'flower', 'book', 'chair', 'table', 'lamp', 'phone', 'computer',
+  'clock', 'door', 'window', 'bed', 'couch', 'television', 'mirror', 'umbrella', 'bag', 'shoe',
+  'hat', 'glasses', 'watch', 'key', 'bottle', 'cup', 'plate', 'fork', 'spoon', 'knife',
+  // Food
+  'apple', 'banana', 'orange', 'pizza', 'hamburger', 'hotdog', 'cake', 'cookie', 'donut',
+  'bread', 'cheese', 'egg', 'carrot', 'broccoli', 'corn', 'grape', 'strawberry', 'watermelon', 'pineapple',
+  // Nature
+  'sun', 'moon', 'star', 'cloud', 'rain', 'rainbow', 'mountain', 'beach', 'ocean', 'river',
+  'forest', 'desert', 'volcano', 'island', 'waterfall', 'lightning', 'snowflake', 'tornado', 'fire', 'leaf',
+  // Transportation
+  'airplane', 'helicopter', 'boat', 'ship', 'train', 'bus', 'bicycle', 'motorcycle', 'rocket', 'submarine',
+  // Buildings & Places
+  'castle', 'church', 'hospital', 'school', 'library', 'restaurant', 'hotel', 'bridge', 'lighthouse', 'tent',
+  // Sports & Activities
+  'ball', 'guitar', 'piano', 'drum', 'camera', 'paintbrush', 'scissors', 'hammer', 'ladder', 'balloon',
+  // People & Body
+  'baby', 'robot', 'ghost', 'pirate', 'ninja', 'wizard', 'princess', 'king', 'clown', 'angel',
+  // Misc
+  'heart', 'diamond', 'crown', 'sword', 'shield', 'arrow', 'candle', 'present', 'treasure', 'flag'
+];
+
+// Shared game state for Guess My Thing
+const guessMyThingState = {
+  phase: 'waiting',
+  players: {},
+  words: {},
+  drawings: {},
+  playersReady: {}, // Track which players clicked "Done Early"
+  timer: null,
+  guesses: {},
+  timeLeft: 0
+}
+
 const initSocketServer = (server) => {
   try {
     log("Initializing socket server...");
@@ -270,10 +310,359 @@ const initSocketServer = (server) => {
         }
       });
 
+      // ========== Guess My Thing Game ==========
+      
+      // Timer and phase management functions (moved outside event handlers)
+      const startGameTimer = () => {
+        if (guessMyThingState.timer) clearInterval(guessMyThingState.timer)
+        
+        guessMyThingState.timer = setInterval(() => {
+          guessMyThingState.timeLeft--
+          
+          io.to("guessmything").emit('timer-update', { timeLeft: guessMyThingState.timeLeft })
+          
+          if (guessMyThingState.timeLeft <= 0) {
+            clearInterval(guessMyThingState.timer)
+            nextPhase()
+          }
+        }, 1000)
+      }
+
+      const nextPhase = () => {
+        // Reset players ready state
+        guessMyThingState.playersReady = {}
+        
+        switch (guessMyThingState.phase) {
+          case 'thinking':
+            guessMyThingState.phase = 'drawing'
+            guessMyThingState.timeLeft = 60
+            guessMyThingState.drawings = {} // Reset drawings
+            log("🎮 Phase changed to: DRAWING")
+            break
+          case 'drawing':
+            guessMyThingState.phase = 'guessing'
+            guessMyThingState.timeLeft = 60
+            guessMyThingState.guesses = {} // Reset guesses
+            log("🎮 Phase changed to: GUESSING")
+            
+            // Send each player their opponent's drawing
+            const playerIds = Object.keys(guessMyThingState.players)
+            playerIds.forEach(playerId => {
+              const opponentId = playerIds.find(id => id !== playerId)
+              const opponentDrawing = guessMyThingState.drawings[opponentId]
+              const playerSocket = io.sockets.sockets.get(guessMyThingState.players[playerId].socketId)
+              
+              if (playerSocket && opponentDrawing) {
+                log("🎮 Sending opponent drawing to player:", playerId)
+                playerSocket.emit('opponent-drawing', opponentDrawing)
+              } else {
+                log("🎮 No drawing found for opponent:", opponentId)
+              }
+            })
+            break
+          case 'guessing':
+            guessMyThingState.phase = 'result'
+            guessMyThingState.timeLeft = 5
+            log("🎮 Phase changed to: RESULT")
+            break
+          case 'result':
+            guessMyThingState.phase = 'waiting'
+            guessMyThingState.words = {}
+            guessMyThingState.drawings = {}
+            guessMyThingState.guesses = {}
+            log("🎮 Phase changed to: WAITING")
+            return
+        }
+        
+        // Reset ready states for next phase
+        guessMyThingState.playersReady = {}
+        
+        io.to("guessmything").emit('phase-changed', {
+          phase: guessMyThingState.phase,
+          timeLeft: guessMyThingState.timeLeft
+        })
+        
+        if (guessMyThingState.phase !== 'result') {
+          startGameTimer()
+        }
+      }
+
+      socket.on("join_guessmything", () => {
+        log("🎮 User joined Guess My Thing:", socket.username)
+        guessMyThingState.players[socket.userId] = {
+          id: socket.userId,
+          username: socket.username,
+          socketId: socket.id,
+          score: 0
+        }
+        
+        socket.join("guessmything")
+        
+        // Notify about connections
+        const playerCount = Object.keys(guessMyThingState.players).length
+        log("🎮 Players in game:", playerCount)
+        
+        // Emit connection status to all players in the game
+        io.to("guessmything").emit("player-joined", {
+          playerCount,
+          canStart: playerCount === 2,
+          players: Object.values(guessMyThingState.players).map(p => ({
+            id: p.id,
+            username: p.username
+          }))
+        })
+        
+        // Legacy opponent-connected event for backward compatibility
+        if (playerCount === 2) {
+          io.to("guessmything").emit("opponent-connected")
+        }
+      })
+
+      socket.on("start-game", (data) => {
+        log("🎮 Game start requested by:", socket.username)
+        
+        if (Object.keys(guessMyThingState.players).length !== 2) {
+          socket.emit("error", { message: "Need 2 players to start" })
+          return
+        }
+
+        // Generate words for both players using curated drawable nouns
+        const playerIds = Object.keys(guessMyThingState.players)
+        
+        // Pick two different random nouns
+        const word1Index = Math.floor(Math.random() * DRAWABLE_NOUNS.length)
+        let word2Index = Math.floor(Math.random() * DRAWABLE_NOUNS.length)
+        // Ensure different words for each player
+        while (word2Index === word1Index) {
+          word2Index = Math.floor(Math.random() * DRAWABLE_NOUNS.length)
+        }
+        
+        guessMyThingState.words[playerIds[0]] = DRAWABLE_NOUNS[word1Index]
+        guessMyThingState.words[playerIds[1]] = DRAWABLE_NOUNS[word2Index]
+        
+        log("🎮 Generated drawable nouns:", guessMyThingState.words)
+        
+        // Start thinking phase
+        guessMyThingState.phase = 'thinking'
+        guessMyThingState.timeLeft = 10
+        
+        // Send words to respective players
+        playerIds.forEach(playerId => {
+          const playerSocket = io.sockets.sockets.get(guessMyThingState.players[playerId].socketId)
+          if (playerSocket) {
+            log("🎮 Sending game-started to player:", playerId, "with word:", guessMyThingState.words[playerId])
+            playerSocket.emit('game-started', {
+              word: guessMyThingState.words[playerId],
+              phase: guessMyThingState.phase,
+              timeLeft: guessMyThingState.timeLeft
+            })
+          } else {
+            log("🎮 ERROR: Could not find socket for player:", playerId)
+          }
+        })
+        
+        startGameTimer()
+        log("🎮 Timer started for thinking phase")
+      })
+
+      socket.on("finish-phase-early", () => {
+        log("🎮 Player finished early:", socket.username)
+        
+        // Track this player as ready
+        guessMyThingState.playersReady[socket.userId] = true
+        
+        // Notify all players about who is ready
+        io.to("guessmything").emit('player-ready', {
+          playerId: socket.userId,
+          readyCount: Object.keys(guessMyThingState.playersReady).length,
+          totalPlayers: Object.keys(guessMyThingState.players).length
+        })
+        
+        // Check if all players are ready
+        const playerCount = Object.keys(guessMyThingState.players).length
+        const readyCount = Object.keys(guessMyThingState.playersReady).length
+        
+        log("🎮 Ready:", readyCount, "/", playerCount)
+        
+        if (readyCount >= playerCount && playerCount >= 2) {
+          log("🎮 All players ready, advancing phase")
+          if (guessMyThingState.timer) clearInterval(guessMyThingState.timer)
+          guessMyThingState.playersReady = {} // Reset for next phase
+          nextPhase()
+        }
+      })
+
+      socket.on("drawing-update", (drawingData) => {
+        if (guessMyThingState.phase !== 'drawing') return
+        
+        guessMyThingState.drawings[socket.userId] = drawingData
+        
+        // Send drawing to opponent
+        socket.to("guessmything").emit('drawing-updated', drawingData)
+      })
+
+      socket.on("submit-guess", (data) => {
+        const { guess } = data
+        if (guessMyThingState.phase !== 'guessing') return
+        
+        log("🎮 Guess submitted:", guess, "by:", socket.username)
+        
+        // Find opponent's word
+        const playerIds = Object.keys(guessMyThingState.players)
+        const opponentId = playerIds.find(id => id !== socket.userId)
+        const targetWord = guessMyThingState.words[opponentId]
+        
+        if (!targetWord) {
+          log("🎮 No target word found for opponent:", opponentId)
+          return
+        }
+        
+        // Normalize both strings for comparison
+        const normalizeWord = (word) => {
+          return word
+            .toLowerCase()
+            .trim()
+            .replace(/[^a-z0-9]/g, '') // Remove special chars
+            .replace(/s$/, '') // Remove trailing 's' for plural handling
+        }
+        
+        const normalizedGuess = normalizeWord(guess)
+        const normalizedTarget = normalizeWord(targetWord)
+        
+        // Check for exact match or close match (handles plurals, minor typos)
+        const correct = normalizedGuess === normalizedTarget || 
+                       normalizedGuess === normalizedTarget + 's' ||
+                       normalizedGuess + 's' === normalizedTarget
+        
+        log("🎮 Comparing:", normalizedGuess, "vs", normalizedTarget, "Result:", correct)
+        
+        if (correct) {
+          // Winner!
+          guessMyThingState.players[socket.userId].score++
+          io.to("guessmything").emit('guess-result', {
+            correct: true,
+            guess,
+            winner: socket.userId,
+            word: targetWord
+          })
+          
+          if (guessMyThingState.timer) clearInterval(guessMyThingState.timer)
+          setTimeout(() => nextPhase(), 3000) // Show result for 3 seconds
+        } else {
+          // Wrong guess
+          socket.emit('guess-result', {
+            correct: false,
+            guess,
+            winner: null,
+            hint: `Not quite! (${guess})`
+          })
+        }
+      })
+
+      // Play Again system - wait for both players
+      socket.on("ready-to-play-again", () => {
+        log("🎮 Player ready to play again:", socket.username)
+        
+        guessMyThingState.playersReady[socket.userId] = true
+        
+        // Notify all players about who is ready
+        const readyCount = Object.keys(guessMyThingState.playersReady).length
+        const playerCount = Object.keys(guessMyThingState.players).length
+        
+        io.to("guessmything").emit('player-ready-rematch', {
+          playerId: socket.userId,
+          readyCount,
+          totalPlayers: playerCount
+        })
+        
+        log("🎮 Ready for rematch:", readyCount, "/", playerCount)
+        
+        // If both players are ready, start a new game automatically
+        if (readyCount >= playerCount && playerCount >= 2) {
+          log("🎮 Both players ready, starting new game")
+          guessMyThingState.playersReady = {} // Reset ready states
+          
+          // Generate words for both players
+          const playerIds = Object.keys(guessMyThingState.players)
+          
+          const word1Index = Math.floor(Math.random() * DRAWABLE_NOUNS.length)
+          let word2Index = Math.floor(Math.random() * DRAWABLE_NOUNS.length)
+          while (word2Index === word1Index) {
+            word2Index = Math.floor(Math.random() * DRAWABLE_NOUNS.length)
+          }
+          
+          guessMyThingState.words[playerIds[0]] = DRAWABLE_NOUNS[word1Index]
+          guessMyThingState.words[playerIds[1]] = DRAWABLE_NOUNS[word2Index]
+          guessMyThingState.drawings = {} // Reset drawings
+          guessMyThingState.guesses = {} // Reset guesses
+          
+          // Start thinking phase
+          guessMyThingState.phase = 'thinking'
+          guessMyThingState.timeLeft = 10
+          
+          // Send words to respective players
+          playerIds.forEach(playerId => {
+            const playerSocket = io.sockets.sockets.get(guessMyThingState.players[playerId].socketId)
+            if (playerSocket) {
+              playerSocket.emit('game-started', {
+                word: guessMyThingState.words[playerId],
+                phase: guessMyThingState.phase,
+                timeLeft: guessMyThingState.timeLeft
+              })
+            }
+          })
+          
+          startGameTimer()
+        }
+      })
+
+      socket.on("leave_guessmything", () => {
+        log("🎮 User leaving Guess My Thing:", socket.username)
+        delete guessMyThingState.players[socket.userId]
+        socket.leave("guessmything")
+        
+        const remainingCount = Object.keys(guessMyThingState.players).length
+        log("🎮 Players remaining:", remainingCount)
+        
+        // Reset game if someone leaves
+        if (remainingCount < 2) {
+          guessMyThingState.phase = 'waiting'
+          guessMyThingState.words = {}
+          guessMyThingState.drawings = {}
+          guessMyThingState.guesses = {}
+          if (guessMyThingState.timer) clearInterval(guessMyThingState.timer)
+        }
+        
+        // Notify remaining players
+        io.to("guessmything").emit("player-left", {
+          playerCount: remainingCount,
+          canStart: remainingCount === 2
+        })
+        
+        // Legacy event for backward compatibility
+        socket.to("guessmything").emit("opponent-disconnected")
+      })
+
       socket.on("disconnect", (reason) => {
         log("❌ User disconnected:", socket.username, "socketId:", socket.id, "reason:", reason);
         connectedUsers.delete(socket.userId);
         io.emit("user_offline", { userId: socket.userId });
+        
+        // Clean up Guess My Thing game state
+        if (guessMyThingState.players[socket.userId]) {
+          delete guessMyThingState.players[socket.userId];
+          
+          // Reset game if someone leaves
+          if (Object.keys(guessMyThingState.players).length < 2) {
+            guessMyThingState.phase = 'waiting';
+            guessMyThingState.words = {};
+            guessMyThingState.drawings = {};
+            guessMyThingState.guesses = {};
+            if (guessMyThingState.timer) clearInterval(guessMyThingState.timer);
+          }
+          
+          io.to("guessmything").emit("opponent-disconnected");
+        }
         
         // Notify board room if user was in one
         if (socket.currentBoardId) {
