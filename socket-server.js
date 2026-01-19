@@ -505,12 +505,18 @@ const initSocketServer = (server) => {
         const { guess } = data
         if (guessMyThingState.phase !== 'guessing') return
         
-        log("🎮 Guess submitted:", guess, "by:", socket.username)
+        log("🎮 Guess submitted:", guess, "by:", socket.username, "(ID:", socket.userId, ")")
+        log("🎮 All words in game:", JSON.stringify(guessMyThingState.words))
+        log("🎮 All players in game:", JSON.stringify(Object.keys(guessMyThingState.players)))
         
-        // Find opponent's word
+        // Find opponent's word - the word the OPPONENT was drawing
+        // The guesser should guess what they SEE (opponent's drawing = opponent's word)
         const playerIds = Object.keys(guessMyThingState.players)
         const opponentId = playerIds.find(id => id !== socket.userId)
         const targetWord = guessMyThingState.words[opponentId]
+        
+        log("🎮 Guesser ID:", socket.userId, "Opponent ID:", opponentId)
+        log("🎮 Target word (what opponent drew):", targetWord)
         
         if (!targetWord) {
           log("🎮 No target word found for opponent:", opponentId)
