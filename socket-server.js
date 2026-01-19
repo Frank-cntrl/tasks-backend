@@ -344,19 +344,26 @@ const initSocketServer = (server) => {
             guessMyThingState.timeLeft = 60
             guessMyThingState.guesses = {} // Reset guesses
             log("🎮 Phase changed to: GUESSING")
+            log("🎮 All drawings stored:", Object.keys(guessMyThingState.drawings))
+            log("🎮 All players:", Object.keys(guessMyThingState.players))
             
             // Send each player their opponent's drawing
             const playerIds = Object.keys(guessMyThingState.players)
             playerIds.forEach(playerId => {
               const opponentId = playerIds.find(id => id !== playerId)
+              log("🎮 For player", playerId, "-> opponent is", opponentId)
+              log("🎮 Drawings keys:", Object.keys(guessMyThingState.drawings))
+              
               const opponentDrawing = guessMyThingState.drawings[opponentId]
               const playerSocket = io.sockets.sockets.get(guessMyThingState.players[playerId].socketId)
               
+              log("🎮 Opponent drawing exists?", !!opponentDrawing, "for opponentId:", opponentId)
+              
               if (playerSocket && opponentDrawing) {
-                log("🎮 Sending opponent drawing to player:", playerId)
+                log("🎮 Sending opponent drawing to player:", playerId, "(opponent was:", opponentId, ")")
                 playerSocket.emit('opponent-drawing', opponentDrawing)
               } else {
-                log("🎮 No drawing found for opponent:", opponentId)
+                log("🎮 No drawing found for opponent:", opponentId, "- available drawings:", Object.keys(guessMyThingState.drawings))
               }
             })
             break
@@ -495,7 +502,9 @@ const initSocketServer = (server) => {
       socket.on("drawing-update", (drawingData) => {
         if (guessMyThingState.phase !== 'drawing') return
         
+        log("🎨 Saving drawing from user:", socket.username, "with userId:", socket.userId, "(type:", typeof socket.userId, ")")
         guessMyThingState.drawings[socket.userId] = drawingData
+        log("🎨 Drawings now stored for IDs:", Object.keys(guessMyThingState.drawings))
         
         // Send drawing to opponent
         socket.to("guessmything").emit('drawing-updated', drawingData)
@@ -505,17 +514,18 @@ const initSocketServer = (server) => {
         const { guess } = data
         if (guessMyThingState.phase !== 'guessing') return
         
-        log("🎮 Guess submitted:", guess, "by:", socket.username, "(ID:", socket.userId, ")")
+        const odGuesserId = String(socket.userId)
+        log("🎮 Guess submitted:", guess, "by:", socket.username, "(ID:", odGuesserId, ")")
         log("🎮 All words in game:", JSON.stringify(guessMyThingState.words))
         log("🎮 All players in game:", JSON.stringify(Object.keys(guessMyThingState.players)))
         
         // Find opponent's word - the word the OPPONENT was drawing
         // The guesser should guess what they SEE (opponent's drawing = opponent's word)
         const playerIds = Object.keys(guessMyThingState.players)
-        const opponentId = playerIds.find(id => id !== socket.userId)
+        const opponentId = playerIds.find(id => id !== odGuesserId)
         const targetWord = guessMyThingState.words[opponentId]
         
-        log("🎮 Guesser ID:", socket.userId, "Opponent ID:", opponentId)
+        log("🎮 Guesser ID:", odGuesserId, "Opponent ID:", opponentId)
         log("🎮 Target word (what opponent drew):", targetWord)
         
         if (!targetWord) {
