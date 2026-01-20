@@ -48,6 +48,7 @@ const guessMyThingState = {
   words: {},
   drawings: {},
   playersReady: {}, // Track which players clicked "Done Early"
+  rematchReady: {}, // Track which players clicked "Play Again" (separate from playersReady)
   timer: null,
   guesses: {},
   timeLeft: 0
@@ -339,7 +340,7 @@ const initSocketServer = (server) => {
             guessMyThingState.drawings = {} // Reset drawings
             log("🎮 Phase changed to: DRAWING")
             break
-          case 'drawing':
+          case 'drawing': {
             guessMyThingState.phase = 'guessing'
             guessMyThingState.timeLeft = 60
             guessMyThingState.guesses = {} // Reset guesses
@@ -367,11 +368,26 @@ const initSocketServer = (server) => {
               }
             })
             break
-          case 'guessing':
+          }
+          case 'guessing': {
             guessMyThingState.phase = 'result'
             guessMyThingState.timeLeft = 5
-            log("🎮 Phase changed to: RESULT")
+            log("🎮 Phase changed to: RESULT (timeout - no one guessed)")
+            
+            // Time ran out without a correct guess - reveal words to both players
+            const playerIds = Object.keys(guessMyThingState.players)
+            playerIds.forEach(playerId => {
+              const opponentId = playerIds.find(id => id !== playerId)
+              const opponentWord = guessMyThingState.words[opponentId]
+              const playerSocket = io.sockets.sockets.get(guessMyThingState.players[playerId]?.socketId)
+              if (playerSocket && opponentWord) {
+                playerSocket.emit('round-timeout', {
+                  opponentWord: opponentWord
+                })
+              }
+            })
             break
+          }
           case 'result':
             guessMyThingState.phase = 'waiting'
             guessMyThingState.words = {}
@@ -555,12 +571,33 @@ const initSocketServer = (server) => {
         if (correct) {
           // Winner!
           guessMyThingState.players[socket.userId].score++
-          io.to("guessmything").emit('guess-result', {
+          
+          // Send personalized result to each player
+          // Winner sees the word they guessed (targetWord = opponent's word)
+          // Loser sees the word they failed to guess (winner's word)
+          const winnerId = socket.userId
+          const loserId = opponentId
+          const winnerWord = guessMyThingState.words[winnerId] // What the winner was drawing
+          const loserWord = targetWord // What the loser was drawing (what winner guessed)
+          
+          // Send to winner - show them the word they guessed
+          socket.emit('guess-result', {
             correct: true,
             guess,
-            winner: socket.userId,
-            word: targetWord
+            winner: winnerId,
+            word: loserWord // The word winner guessed (loser's drawing)
           })
+          
+          // Send to loser - show them the word they failed to guess
+          const loserSocket = io.sockets.sockets.get(guessMyThingState.players[loserId]?.socketId)
+          if (loserSocket) {
+            loserSocket.emit('guess-result', {
+              correct: true,
+              guess,
+              winner: winnerId,
+              word: winnerWord // The word loser failed to guess (winner's drawing)
+            })
+          }
           
           if (guessMyThingState.timer) clearInterval(guessMyThingState.timer)
           setTimeout(() => nextPhase(), 3000) // Show result for 3 seconds
@@ -579,10 +616,11 @@ const initSocketServer = (server) => {
       socket.on("ready-to-play-again", () => {
         log("🎮 Player ready to play again:", socket.username)
         
-        guessMyThingState.playersReady[socket.userId] = true
+        // Use rematchReady instead of playersReady to avoid being cleared by nextPhase()
+        guessMyThingState.rematchReady[socket.userId] = true
         
         // Notify all players about who is ready
-        const readyCount = Object.keys(guessMyThingState.playersReady).length
+        const readyCount = Object.keys(guessMyThingState.rematchReady).length
         const playerCount = Object.keys(guessMyThingState.players).length
         
         io.to("guessmything").emit('player-ready-rematch', {
@@ -596,7 +634,7 @@ const initSocketServer = (server) => {
         // If both players are ready, start a new game automatically
         if (readyCount >= playerCount && playerCount >= 2) {
           log("🎮 Both players ready, starting new game")
-          guessMyThingState.playersReady = {} // Reset ready states
+          guessMyThingState.rematchReady = {} // Reset rematch ready states
           
           // Generate words for both players
           const playerIds = Object.keys(guessMyThingState.players)
@@ -635,6 +673,7 @@ const initSocketServer = (server) => {
       socket.on("leave_guessmything", () => {
         log("🎮 User leaving Guess My Thing:", socket.username)
         delete guessMyThingState.players[socket.userId]
+        delete guessMyThingState.rematchReady[socket.userId] // Clean up rematch ready state
         socket.leave("guessmything")
         
         const remainingCount = Object.keys(guessMyThingState.players).length
@@ -646,6 +685,7 @@ const initSocketServer = (server) => {
           guessMyThingState.words = {}
           guessMyThingState.drawings = {}
           guessMyThingState.guesses = {}
+          guessMyThingState.rematchReady = {} // Clear rematch state
           if (guessMyThingState.timer) clearInterval(guessMyThingState.timer)
         }
         
@@ -667,6 +707,7 @@ const initSocketServer = (server) => {
         // Clean up Guess My Thing game state
         if (guessMyThingState.players[socket.userId]) {
           delete guessMyThingState.players[socket.userId];
+          delete guessMyThingState.rematchReady[socket.userId]; // Clean up rematch ready state
           
           // Reset game if someone leaves
           if (Object.keys(guessMyThingState.players).length < 2) {
@@ -674,6 +715,7 @@ const initSocketServer = (server) => {
             guessMyThingState.words = {};
             guessMyThingState.drawings = {};
             guessMyThingState.guesses = {};
+            guessMyThingState.rematchReady = {}; // Clear rematch state
             if (guessMyThingState.timer) clearInterval(guessMyThingState.timer);
           }
           
